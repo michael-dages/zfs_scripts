@@ -8,7 +8,7 @@ This repository contains a handy Bash script—[`zpool_replace.sh`](./zpool_repl
   Detects which pools are degraded (i.e., not in `ONLINE` state) and prompts you to select one if multiple pools are affected.
 
 - **Missing Disk Detection:**  
-  Automatically identifies the disk marked as `REMOVED`, `MISSING`, `UNAVAIL`, or `DEGRADED` in the selected pool.
+  Automatically identifies the disk marked as `REMOVED`, `FAULTED`, `UNAVAIL`, or `MISSING` in the selected pool.
 
 - **Resilver Protection:**  
   If the pool is already resilvering, the script will notify you and exit to prevent interfering with the ongoing rebuild.
@@ -41,7 +41,7 @@ This repository contains a handy Bash script—[`zpool_replace.sh`](./zpool_repl
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/hevel86/zfs_scripts.git
+   git clone https://github.com/michael-dages/zfs_scripts.git
    cd zfs_scripts
    ```
 2. **Make the Script Executable:**
