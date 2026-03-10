@@ -19,17 +19,9 @@ fi
 
 # Step 1: Gather all degraded (or unhealthy) pools (state not ONLINE).
 degraded_pools=()
-while read -r line; do
-    pool_name=$(echo "$line" | awk '{print $2}')
-    degraded_pools+=("$pool_name")
-done < <(zpool status | grep -E "^  pool:" | while read -r l; do
-    pool=$(echo "$l" | awk '{print $2}')
-    state_line=$(zpool status "$pool" | grep "state:" | head -n1)
-    state=$(echo "$state_line" | awk '{print $2}')
-    if [ "$state" != "ONLINE" ]; then
-        echo "$l"
-    fi
-done)
+while IFS=$'\t' read -r pool_name health; do
+    [ "$health" != "ONLINE" ] && degraded_pools+=("$pool_name")
+done < <(zpool list -H -o name,health)
 
 if [ ${#degraded_pools[@]} -eq 0 ]; then
     echo "✅ All pools are healthy. No degraded pools detected."
@@ -57,7 +49,7 @@ echo
 
 # Step 3: Detect the missing disk in the selected pool.
 # Use awk to extract the disk identifier where the first field starts with ata-/scsi- and status is REMOVED (or similar).
-missing_line=$(zpool status "$selected_pool" | awk '/REMOVED/ && ($1 ~ /^(ata-|scsi-)/){print; exit}')
+missing_line=$(zpool status "$selected_pool" | awk '/(REMOVED|FAULTED|UNAVAIL|MISSING)/ && ($1 ~ /^(ata-|scsi-)/){print; exit}')
 if [ -z "$missing_line" ]; then
     echo "✅ No missing disk found in pool $selected_pool. Exiting."
     exit 0
@@ -84,11 +76,14 @@ all_pool_disks=($(printf "%s\n" "${all_pool_disks[@]}" | sort -u))
 # Step 5: Scan /dev/disk/by-id for candidate new disks that are not in any pool.
 echo "🔍 Scanning for candidate new disks (drives not in any pool)..."
 new_candidates=()
+declare -A seen_candidates
 for id_path in /dev/disk/by-id/ata-* /dev/disk/by-id/scsi-*; do
     [ -e "$id_path" ] || continue
     id=$(basename "$id_path")
     # Remove partition suffix if present.
     base_id=$(echo "$id" | sed 's/-part.*//')
+    # Skip if this base disk was already added.
+    [[ -n "${seen_candidates[$base_id]}" ]] && continue
     skip=0
     for pd in "${all_pool_disks[@]}"; do
         if [[ "$base_id" == "$pd" ]]; then
@@ -97,7 +92,8 @@ for id_path in /dev/disk/by-id/ata-* /dev/disk/by-id/scsi-*; do
         fi
     done
     if [ $skip -eq 0 ]; then
-        new_candidates+=("$id")
+        new_candidates+=("$base_id")
+        seen_candidates[$base_id]=1
     fi
 done
 
@@ -116,15 +112,18 @@ get_disk_info() {
     size=$(lsblk -dn -o SIZE "$device")
     [ -z "$model" ] && model="Unknown"
     [ -z "$serial" ] && serial="Unknown"
-    echo "$model" "$serial" "$size"
+    echo "${model}|${serial}|${size}"
 }
 
 # Step 6: List candidate new disks with details.
+declare -A disk_info_cache
 echo "💡 Candidate new disks found:"
 for i in "${!new_candidates[@]}"; do
     candidate="${new_candidates[$i]}"
     device=$(readlink -f "/dev/disk/by-id/$candidate")
-    read model serial size <<< $(get_disk_info "$device")
+    info=$(get_disk_info "$device")
+    disk_info_cache[$candidate]="$info"
+    IFS='|' read -r model serial size <<< "$info"
     echo "[$i] $candidate -> Device: $device, Model: $model, Serial: $serial, Size: $size"
 done
 echo
@@ -143,7 +142,7 @@ echo
 echo "✅ Selected new disk:"
 echo "Identifier: $new_disk"
 echo "Device: $new_device"
-read model serial size <<< $(get_disk_info "$new_device")
+IFS='|' read -r model serial size <<< "${disk_info_cache[$new_disk]}"
 echo "Model: $model, Serial: $serial, Size: $size"
 echo
 
