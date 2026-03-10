@@ -27,9 +27,9 @@ The script requires root privileges to access ZFS pool data and disk info.
 The script is a single linear flow with 8 sequential steps:
 
 1. **Resilver check** — Exits early if any pool scan shows "resilver in progress" (checked via `zpool status | grep "^  scan:"`)
-2. **Degraded pool detection** — Iterates all pools, checks state != `ONLINE`
+2. **Degraded pool detection** — Uses `zpool list -H -o name,health` to find all pools with state != `ONLINE` in a single call
 3. **Pool selection** — If multiple degraded pools, prompts user; otherwise auto-selects
-4. **Missing disk detection** — Finds disk lines matching `ata-`/`scsi-` prefix with `REMOVED` status in `zpool status` output
+4. **Missing disk detection** — Finds disk lines matching `ata-`/`scsi-` prefix with `REMOVED`, `FAULTED`, `UNAVAIL`, or `MISSING` status in `zpool status` output
 5. **All-pool disk inventory** — Builds exclusion list of all disks in any pool by scanning `zpool status` for `ata-`/`scsi-` identifiers
 6. **Candidate discovery** — Scans `/dev/disk/by-id/ata-*` and `/dev/disk/by-id/scsi-*`, excludes any in the pool inventory
 7. **Candidate display** — Uses `smartctl` and `lsblk` to show model, serial, size for each candidate
